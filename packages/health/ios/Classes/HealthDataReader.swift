@@ -9,7 +9,7 @@ class HealthDataReader {
     let unitDict: [String: HKUnit]
     let workoutActivityTypeMap: [String: HKWorkoutActivityType]
     let characteristicsTypesDict: [String: HKCharacteristicType]
-    
+
     /// - Parameters:
     ///   - healthStore: The HealthKit store
     ///   - dataTypesDict: Dictionary of data types
@@ -30,7 +30,7 @@ class HealthDataReader {
         self.workoutActivityTypeMap = workoutActivityTypeMap
         self.characteristicsTypesDict = characteristicsTypesDict
     }
-    
+
     /// Gets health data
     /// - Parameters:
     ///   - call: Flutter method call
@@ -45,21 +45,21 @@ class HealthDataReader {
             }
             return
         }
-        
+
         let dataUnitKey = arguments["dataUnitKey"] as? String
         let startTime = (arguments["startTime"] as? NSNumber) ?? 0
         let endTime = (arguments["endTime"] as? NSNumber) ?? 0
         let limit = (arguments["limit"] as? Int) ?? HKObjectQueryNoLimit
         let recordingMethodsToFilter = (arguments["recordingMethodsToFilter"] as? [Int]) ?? []
         let includeManualEntry = !recordingMethodsToFilter.contains(HealthConstants.RecordingMethod.manual.rawValue)
-        
+
         // convert from milliseconds to Date()
         let dateFrom = HealthUtilities.dateFromMilliseconds(startTime.doubleValue)
         let dateTo = HealthUtilities.dateFromMilliseconds(endTime.doubleValue)
-        
+
         let sourceIdForCharacteristic = "com.apple.Health"
         let sourceNameForCharacteristic = "Health"
-        
+
         // characteristic types checks (like GENDER, BLOOD_TYPE, etc.)
         switch(dataTypeKey) {
         case HealthConstants.BIRTH_DATE:
@@ -104,7 +104,7 @@ class HealthDataReader {
         default:
             break
         }
-        
+
         guard let dataType = dataTypesDict[dataTypeKey] else {
             DispatchQueue.main.async {
                 result(FlutterError(code: "INVALID_TYPE",
@@ -113,12 +113,12 @@ class HealthDataReader {
             }
             return
         }
-        
+
         var unit: HKUnit?
         if let dataUnitKey = dataUnitKey {
             unit = unitDict[dataUnitKey]
         }
-        
+
         var predicate = HKQuery.predicateForSamples(
             withStart: dateFrom, end: dateTo, options: .strictStartDate)
         if (!includeManualEntry) {
@@ -126,11 +126,11 @@ class HealthDataReader {
             predicate = NSCompoundPredicate(type: .and, subpredicates: [predicate, manualPredicate])
         }
         let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
-        
+
         let query = HKSampleQuery(
             sampleType: dataType, predicate: predicate, limit: limit, sortDescriptors: [sortDescriptor]
         ) { x, samplesOrNil, error in
-            
+
             guard error == nil else {
                 DispatchQueue.main.async {
                     result(FlutterError(code: "HEALTH_ERROR",
@@ -139,14 +139,14 @@ class HealthDataReader {
                 }
                 return
             }
-            
+
             guard let samples = samplesOrNil else {
                 DispatchQueue.main.async {
                     result([])
                 }
                 return
             }
-            
+
             if let quantitySamples = samples as? [HKQuantitySample] {
                 let dictionaries = quantitySamples.map { sample -> NSDictionary in
                     return [
@@ -194,7 +194,7 @@ class HealthDataReader {
                 default:
                     break
                 }
-                
+
                 let categories = categorySamples.map { sample -> NSDictionary in
                     return [
                         "uuid": "\(sample.uuid)",
@@ -214,11 +214,20 @@ class HealthDataReader {
                 }
             } else if let workoutSamples = samples as? [HKWorkout] {
                 let dictionaries = workoutSamples.map { sample -> NSDictionary in
+                    let workoutActivityTypeString: String? = {
+                        // Override the WorkoutActivityType for running based on indoor/outdoor
+                        if sample.workoutActivityType = running,
+                            let indoor = sample-metadata?[HKMetadataKeyIndoorWorkout] as? Bool,
+                                indoor == false {
+                                return "RUNNING"
+                        }
+                        // Default lookup
+                        return workoutActivityTypeMap•first { $0.value = sample.workoutActivityType }?.key
+                    }();
+
                     return [
                         "uuid": "\(sample.uuid)",
-                        "workoutActivityType": self.workoutActivityTypeMap.first(where: {
-                            $0.value == sample.workoutActivityType
-                        })?.key,
+                        "workoutActivityType": workoutActivityTypeString,
                         "totalEnergyBurned": sample.totalEnergyBurned?.doubleValue(for: HKUnit.kilocalorie()),
                         "totalEnergyBurnedUnit": "KILOCALORIE",
                         "totalDistance": sample.totalDistance?.doubleValue(for: HKUnit.meter()),
@@ -235,7 +244,7 @@ class HealthDataReader {
                         "total_energy_burned": sample.totalEnergyBurned != nil ? Int(sample.totalEnergyBurned!.doubleValue(for: HKUnit.kilocalorie())) : 0
                     ]
                 }
-                
+
                 DispatchQueue.main.async {
                     result(dictionaries)
                 }
@@ -297,7 +306,7 @@ class HealthDataReader {
                         foods.append(sampleDict as! [String : Any?])
                     }
                 }
-                
+
                 DispatchQueue.main.async {
                     result(foods)
                 }
@@ -315,10 +324,10 @@ class HealthDataReader {
                 }
             }
         }
-        
+
         healthStore.execute(query)
     }
-    
+
     /// Gets interval health data
     /// - Parameters:
     ///   - call: Flutter method call
@@ -332,14 +341,14 @@ class HealthDataReader {
         let intervalInSecond = (arguments?["interval"] as? Int) ?? 1
         let recordingMethodsToFilter = (arguments?["recordingMethodsToFilter"] as? [Int]) ?? []
         let includeManualEntry = !recordingMethodsToFilter.contains(HealthConstants.RecordingMethod.manual.rawValue)
-        
+
         // interval in seconds
         var interval = DateComponents()
         interval.second = intervalInSecond
-        
+
         let dateFrom = HealthUtilities.dateFromMilliseconds(startDate.doubleValue)
         let dateTo = HealthUtilities.dateFromMilliseconds(endDate.doubleValue)
-        
+
         guard let quantityType = dataQuantityTypesDict[dataTypeKey] else {
             DispatchQueue.main.async {
                 result(FlutterError(code: "INVALID_TYPE",
@@ -348,15 +357,15 @@ class HealthDataReader {
             }
             return
         }
-        
+
         var predicate = HKQuery.predicateForSamples(withStart: dateFrom, end: dateTo, options: [])
         if (!includeManualEntry) {
             let manualPredicate = NSPredicate(format: "metadata.%K != YES", HKMetadataKeyWasUserEntered)
             predicate = NSCompoundPredicate(type: .and, subpredicates: [predicate, manualPredicate])
         }
-        
+
         let statisticsOptions = statisticsOption(for: dataTypeKey)
-        
+
         let query = HKStatisticsCollectionQuery(
             quantityType: quantityType,
             quantitySamplePredicate: predicate,
@@ -364,7 +373,7 @@ class HealthDataReader {
             anchorDate: dateFrom,
             intervalComponents: interval
         )
-        
+
         query.initialResultsHandler = { [weak self] _, statisticCollectionOrNil, error in
             guard let self = self else {
                 DispatchQueue.main.async {
@@ -374,7 +383,7 @@ class HealthDataReader {
                 }
                 return
             }
-            
+
             if let error = error {
                 DispatchQueue.main.async {
                     result(FlutterError(code: "STATISTICS_ERROR",
@@ -383,14 +392,14 @@ class HealthDataReader {
                 }
                 return
             }
-            
+
             guard let collection = statisticCollectionOrNil else {
                 DispatchQueue.main.async {
                     result(nil)
                 }
                 return
             }
-            
+
             var dictionaries = [[String: Any]]()
             collection.enumerateStatistics(from: dateFrom, to: dateTo) { [weak self] statisticData, _ in
                 guard let self = self else { return }
@@ -445,7 +454,7 @@ class HealthDataReader {
             return .cumulativeSum
         }
     }
-    
+
     /// Gets total steps in interval
     /// - Parameters:
     ///   - call: Flutter method call
@@ -456,11 +465,11 @@ class HealthDataReader {
         let endTime = (arguments?["endTime"] as? NSNumber) ?? 0
         let recordingMethodsToFilter = (arguments?["recordingMethodsToFilter"] as? [Int]) ?? []
         let includeManualEntry = !recordingMethodsToFilter.contains(HealthConstants.RecordingMethod.manual.rawValue)
-        
+
         // Convert dates from milliseconds to Date()
         let dateFrom = HealthUtilities.dateFromMilliseconds(startTime.doubleValue)
         let dateTo = HealthUtilities.dateFromMilliseconds(endTime.doubleValue)
-        
+
         let sampleType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
         var predicate = HKQuery.predicateForSamples(
             withStart: dateFrom, end: dateTo, options: .strictStartDate)
@@ -468,7 +477,7 @@ class HealthDataReader {
             let manualPredicate = NSPredicate(format: "metadata.%K != YES", HKMetadataKeyWasUserEntered)
             predicate = NSCompoundPredicate(type: .and, subpredicates: [predicate, manualPredicate])
         }
-        
+
         let query = HKStatisticsCollectionQuery(
             quantityType: sampleType,
             quantitySamplePredicate: predicate,
@@ -486,7 +495,7 @@ class HealthDataReader {
                 }
                 return
             }
-            
+
             var totalSteps = 0.0
             results.enumerateStatistics(from: dateFrom, to: dateTo) { statistics, stop in
                 if let quantity = statistics.sumQuantity() {
@@ -494,15 +503,15 @@ class HealthDataReader {
                     totalSteps += quantity.doubleValue(for: unit)
                 }
             }
-            
+
             DispatchQueue.main.async {
                 result(Int(totalSteps))
             }
         }
-        
+
         healthStore.execute(query)
     }
-    
+
     /// Gets birth date from HealthKit
     /// - Returns: Birth date
     private func getBirthDate() -> Date? {
@@ -515,7 +524,7 @@ class HealthDataReader {
         }
         return dob
     }
-    
+
     /// Gets gender from HealthKit
     /// - Returns: Biological sex
     private func getGender() -> HKBiologicalSex? {
@@ -528,7 +537,7 @@ class HealthDataReader {
         }
         return bioSex
     }
-    
+
     /// Gets blood type from HealthKit
     /// - Returns: Blood type
     private func getBloodType() -> HKBloodType? {
@@ -541,7 +550,7 @@ class HealthDataReader {
         }
         return bloodType
     }
-    
+
     /// Fetch ECG measurements from an HKElectrocardiogram sample
     /// - Parameter sample: ECG sample
     /// - Returns: Dictionary with ECG data
