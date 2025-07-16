@@ -216,13 +216,13 @@ class HealthDataReader {
                 let dictionaries = workoutSamples.map { sample -> NSDictionary in
                     let workoutActivityTypeString: String? = {
                         // Override the WorkoutActivityType for running based on indoor/outdoor
-                        if sample.workoutActivityType == running,
+                        if sample.workoutActivityType == .running,
                             let indoor = sample.metadata?[HKMetadataKeyIndoorWorkout] as? Bool,
                                 indoor == false {
                                 return "RUNNING"
                         }
                         // Default lookup
-                        return workoutActivityTypeMap.first { $0.value = sample.workoutActivityType }?.key
+                        return self.workoutActivityTypeMap.first { $0.value == sample.workoutActivityType }?.key
                     }();
 
                     return [
